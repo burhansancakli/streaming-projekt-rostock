@@ -6,7 +6,6 @@ from datetime import datetime
 import random
 import logging
 
-
 # simple stream with window size
 class stream:
 	def __init__(self, name, winsize):
