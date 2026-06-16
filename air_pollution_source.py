@@ -5,8 +5,8 @@ import random
 import time
 
 from stream import stream
-
-def luftverschmutzung_quelle(oStream: stream):
+# air pollution
+def air_pollution_source(oStream: stream):
 	pn25 = range(10,80)
 	while True:
 		num = random.choice(pn25)

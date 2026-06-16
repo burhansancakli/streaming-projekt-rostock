@@ -6,9 +6,9 @@ from datetime import datetime
 import random
 import logging
 
-from luftverschmutzung_quelle import luftverschmutzung_quelle
+from air_pollution_source import air_pollution_source
 from stream import stream
-from wetter_quelle import wetter_quelle
+from weather_source import weather_source
 
 #######################
 
@@ -18,6 +18,9 @@ def sink(iStream):
 		something = iStream.get()
 		logging.debug("consumed %s" % str(something))
 		time.sleep(random.random()*10) # mimic heavy duty
+
+# weather data timestamp 1500
+# air pollution timestamp 1501
 
 def bufferless_fuzzy_merge_join(dominant_stream, recessive_stream, out_stream):
 	"""
@@ -58,8 +61,8 @@ wetter_stream = stream("Wetter Stream", 10)
 merge_stream = stream("Join Stream", 10)
 
 # create threads for three operators 2 sources and one join operator and one sink
-luftverschmutzung_thread = threading.Thread(name='luftverschmutzung', target=luftverschmutzung_quelle, args=(luftverschmutzung_stream,))
-wetter_thread = threading.Thread(name='wetter', target=wetter_quelle, args=(wetter_stream,))
+luftverschmutzung_thread = threading.Thread(name='luftverschmutzung', target=air_pollution_source, args=(luftverschmutzung_stream,))
+wetter_thread = threading.Thread(name='wetter', target=weather_source, args=(wetter_stream,))
 join_thread = threading.Thread(name='join', target=bufferless_fuzzy_merge_join, args=(wetter_stream, luftverschmutzung_stream, merge_stream,))
 sink_thread = threading.Thread(name='sink', target=sink, args=(merge_stream,))
 

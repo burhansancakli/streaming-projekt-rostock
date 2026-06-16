@@ -6,7 +6,8 @@ import time
 
 from stream import stream
 
-def wetter_quelle(oStream: stream):
+# weather data
+def weather_source(oStream: stream):
 	temperatur = 25
 	while True:
 		temperatur += random.random()
