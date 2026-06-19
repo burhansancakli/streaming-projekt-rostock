@@ -7,11 +7,12 @@ import random
 import logging
 
 import time
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-from datetime import datetime
-from luftverschmutzung_quelle import luftverschmutzung_quelle
+from air_pollution_source import air_pollution_source
 from stream import stream
-from wetter_quelle import wetter_quelle
+from weather_source import weather_source
 
 #######################
 
@@ -48,6 +49,8 @@ def minimal_delta_joining(stream1, stream2, window_size=10):
     ax.set_ylabel("Value")
     ax.legend()
     ax.grid(True)
+
+    plot_path = 'minimal_delta_joining_plot.png'
 
     while True:
 
@@ -164,6 +167,12 @@ def minimal_delta_joining(stream1, stream2, window_size=10):
                 for item in joined_list:
                     logging.debug("minimal delta joining: %s", item)
 
+                try:
+                    fig.savefig(plot_path)
+                    logging.info('Plot saved to %s', plot_path)
+                except Exception as err:
+                    logging.warning('Failed to save plot: %s', err)
+
                 joined_list = []
 
             t1 = time.time()
@@ -172,19 +181,19 @@ def minimal_delta_joining(stream1, stream2, window_size=10):
 logging.basicConfig(level=logging.DEBUG, format='[%(levelname)s] (%(threadName)-10s) %(message)s')
 
 # define two streams with different sizes
-luftverschmutzung_stream = stream("Luftverschmutzung Stream", 10)
-wetter_stream = stream("Wetter Stream", 10)
+air_pollution_stream = stream("Air Pollution Stream", 10)
+weather_stream = stream("Weather Stream", 10)
 # the output stream for the join results
 merge_stream = stream("Join Stream", 10)
 
 # create threads for three operators 2 sources and one join operator and one sink
-luftverschmutzung_thread = threading.Thread(name='luftverschmutzung', target=luftverschmutzung_quelle, args=(luftverschmutzung_stream,))
-wetter_thread = threading.Thread(name='wetter', target=wetter_quelle, args=(wetter_stream,))
-join_thread = threading.Thread(name='join', target=minimal_delta_joining, args=(wetter_stream, luftverschmutzung_stream, 50))
+air_pollution_thread = threading.Thread(name='air_pollution', target=air_pollution_source, args=(air_pollution_stream,))
+weather_thread = threading.Thread(name='weather', target=weather_source, args=(weather_stream,))
+join_thread = threading.Thread(name='join', target=minimal_delta_joining, args=(weather_stream, air_pollution_stream, 50))
 sink_thread = threading.Thread(name='sink', target=sink, args=(merge_stream,))
 
-luftverschmutzung_thread.start()
-wetter_thread.start()
+air_pollution_thread.start()
+weather_thread.start()
 join_thread.start()
 sink_thread.start()
 
