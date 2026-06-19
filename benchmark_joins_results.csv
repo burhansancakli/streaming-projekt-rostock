@@ -1,0 +1,4 @@
+Operator,Peak Memory (MB),Avg Memory (MB),Final Memory (MB),Peak Stream Mem (KB),Avg Stream Mem (KB),Peak Occupancy,Avg CPU (%),Total Output Tuples,Duration (s),Throughput (tuples/s)
+Fuzzy Merge Join,64.72,64.69,64.62,0.59,0.45,Humidity Stream=0; Air_Pollution Stream=3; Result Stream=0,0.24,70,112.78,0.62
+Bufferless Fuzzy Merge Join,64.83,64.80,64.77,0.52,0.42,Humidity Stream=1; Air_Pollution Stream=1; Result Stream=0,0.24,68,74.65,0.91
+Minimal Delta Join,64.92,64.90,64.89,0.46,0.40,Humidity Stream=0; Air_Pollution Stream=1; Result Stream=0,0.38,0,36.31,0.00

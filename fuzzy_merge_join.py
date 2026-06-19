@@ -4,9 +4,12 @@ import threading
 import time
 import random
 import logging
+import argparse
 
 from weather_source import weather_source
 from humidity_source import humidity_source
+from air_pollution_source import air_pollution_source
+from sensor_energy_source import sensor_energy_source
 from stream import stream
 
 
@@ -133,31 +136,49 @@ def sink(iStream):
 # ─────────────────────────────────────────
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Fuzzy Merge Join operator')
+    parser.add_argument('--source-s', type=str, default='weather',
+                        choices=['air_pollution', 'weather', 'humidity', 'sensor_energy'],
+                        help='Dominant stream S (slower) source (default: weather)')
+    parser.add_argument('--source-t', type=str, default='humidity',
+                        choices=['air_pollution', 'weather', 'humidity', 'sensor_energy'],
+                        help='Recessive stream T (faster) source (default: humidity)')
+    args = parser.parse_args()
 
     logging.basicConfig(
         level=logging.INFO,
         format='[%(levelname)s] (%(threadName)-12s) %(message)s'
     )
 
+    sources = {
+        'air_pollution': ('Air Pollution', air_pollution_source),
+        'weather': ('Weather', weather_source),
+        'humidity': ('Humidity', humidity_source),
+        'sensor_energy': ('Sensor Energy', sensor_energy_source),
+    }
+
+    source_s_name, source_s_func = sources[args.source_s]
+    source_t_name, source_t_func = sources[args.source_t]
+
     logging.warning("=" * 60)
-    logging.warning("  FUZZY MERGE JOIN — Temperature x Humidity")
-    logging.warning("  S = Temperature (dominant)   ~1.0-2.0 sec/tuple")
-    logging.warning("  T = Humidity    (recessive)  ~0.4-0.6 sec/tuple")
+    logging.warning(f"  FUZZY MERGE JOIN — {source_s_name} x {source_t_name}")
+    logging.warning(f"  S = {source_s_name} (dominant)   → SLOWER STREAM")
+    logging.warning(f"  T = {source_t_name} (recessive) → FASTER STREAM")
     logging.warning("=" * 60)
 
-    stream_S = stream("Stream_S_Temperature", 10)
-    stream_T = stream("Stream_T_Humidity", 20)  # larger because T is faster
+    stream_S = stream(f"Stream_S_{source_s_name}", 10)
+    stream_T = stream(f"Stream_T_{source_t_name}", 20)
     stream_result = stream("Stream_Result", 10)
 
     t_source_S = threading.Thread(
-        name="weather_source",
-        target=weather_source,
+        name="source_S",
+        target=source_s_func,
         args=(stream_S,)
     )
 
     t_source_T = threading.Thread(
-        name="humidity_source",
-        target=humidity_source,
+        name="source_T",
+        target=source_t_func,
         args=(stream_T,)
     )
 
@@ -173,7 +194,6 @@ if __name__ == "__main__":
         args=(stream_result,)
     )
 
-    # Start consumers first, then producers, to avoid race conditions.
     t_sink.start()
     t_fmj.start()
     t_source_T.start()

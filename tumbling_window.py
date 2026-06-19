@@ -2,10 +2,14 @@
 
 import threading
 import logging
+import argparse
 from datetime import datetime
 
 from stream import stream
 from air_pollution_source import air_pollution_source
+from weather_source import weather_source
+from humidity_source import humidity_source
+from sensor_energy_source import sensor_energy_source
 
 
 def tumbling_window_consumer(in_stream, window_size_seconds=10):
@@ -25,6 +29,7 @@ def tumbling_window_consumer(in_stream, window_size_seconds=10):
         while ts >= window_end:
             if value_count > 0:
                 avg_value = value_sum / value_count
+                result = (window_start, window_end, value_count, avg_value)
                 logging.info(
                     "Tumbling window [%s - %s) | Count: %d | Avg: %.2f",
                     datetime.fromtimestamp(window_start).strftime('%H:%M:%S'),
@@ -32,6 +37,7 @@ def tumbling_window_consumer(in_stream, window_size_seconds=10):
                     value_count,
                     avg_value,
                 )
+                yield result
             else:
                 logging.info(
                     "Tumbling window [%s - %s) | empty",
@@ -49,12 +55,31 @@ def tumbling_window_consumer(in_stream, window_size_seconds=10):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Tumbling window operator for stream processing')
+    parser.add_argument('--source', type=str, default='air_pollution', 
+                        choices=['air_pollution', 'weather', 'humidity', 'sensor_energy'],
+                        help='Data source to consume from (default: air_pollution)')
+    parser.add_argument('--window-size', type=int, default=10,
+                        help='Window size in seconds (default: 10)')
+    parser.add_argument('--stream-size', type=int, default=20,
+                        help='Internal stream buffer size (default: 20)')
+    args = parser.parse_args()
+
     logging.basicConfig(level=logging.INFO, format='[%(levelname)s] (%(threadName)-10s) %(message)s')
 
-    pollution_stream = stream("Luftverschmutzung Stream", 20)
+    # Map source names to source functions
+    sources = {
+        'air_pollution': ('Air Pollution Stream', air_pollution_source),
+        'weather': ('Weather Stream', weather_source),
+        'humidity': ('Humidity Stream', humidity_source),
+        'sensor_energy': ('Sensor Energy Stream', sensor_energy_source),
+    }
 
-    pollution_thread = threading.Thread(name='air_pollution', target=air_pollution_source, args=(pollution_stream,))
-    window_thread = threading.Thread(name='tumbling_window', target=tumbling_window_consumer, args=(pollution_stream, 10))
+    stream_name, source_func = sources[args.source]
+    data_stream = stream(stream_name, args.stream_size)
 
-    pollution_thread.start()
-    window_thread.start()
+    source_thread = threading.Thread(name=args.source, target=source_func, args=(data_stream,), daemon=True)
+    source_thread.start()
+
+    for result in tumbling_window_consumer(data_stream, window_size_seconds=args.window_size):
+        pass  # results are logged inside the consumer

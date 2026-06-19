@@ -4,11 +4,14 @@ import threading
 import time
 import random
 import logging
+import argparse
 from collections import deque
 
 from air_pollution_source import air_pollution_source
-from stream import stream
 from weather_source import weather_source
+from humidity_source import humidity_source
+from sensor_energy_source import sensor_energy_source
+from stream import stream
 
 #######################
 
@@ -81,22 +84,45 @@ def bufferless_fuzzy_merge_join(dominant_stream, nondominant_stream, out_stream)
 
 logging.basicConfig(level=logging.DEBUG, format='[%(levelname)s] (%(threadName)-10s) %(message)s')
 
-# define two streams with different sizes
-air_pollution_stream = stream("Air Pollution Stream", 10)
-weather_stream = stream("Weather Stream", 10)
-# the output stream for the join results
-merge_stream = stream("Join Stream", 10)
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Bufferless Fuzzy Merge Join operator')
+    parser.add_argument('--dominant-source', type=str, default='air_pollution',
+                        choices=['air_pollution', 'weather', 'humidity', 'sensor_energy'],
+                        help='Dominant stream (faster) source (default: air_pollution)')
+    parser.add_argument('--nondominant-source', type=str, default='weather',
+                        choices=['air_pollution', 'weather', 'humidity', 'sensor_energy'],
+                        help='Nondominant stream (slower) source (default: weather)')
+    args = parser.parse_args()
 
-# create threads for three operators 2 sources and one join operator and one sink
-air_pollution_thread = threading.Thread(name='air_pollution', target=air_pollution_source, args=(air_pollution_stream,))
-weather_thread = threading.Thread(name='weather', target=weather_source, args=(weather_stream,))
-join_thread = threading.Thread(name='join', target=bufferless_fuzzy_merge_join, args=(air_pollution_stream, weather_stream, merge_stream,))
-sink_thread = threading.Thread(name='sink', target=sink, args=(merge_stream,))
+    sources = {
+        'air_pollution': ('Air Pollution', air_pollution_source),
+        'weather': ('Weather', weather_source),
+        'humidity': ('Humidity', humidity_source),
+        'sensor_energy': ('Sensor Energy', sensor_energy_source),
+    }
 
-air_pollution_thread.start()
-weather_thread.start()
-join_thread.start()
-sink_thread.start()
+    dominant_name, dominant_func = sources[args.dominant_source]
+    nondominant_name, nondominant_func = sources[args.nondominant_source]
+
+    logging.warning("=" * 60)
+    logging.warning(f"  BUFFERLESS FUZZY MERGE JOIN — {dominant_name} x {nondominant_name}")
+    logging.warning(f"  Dominant: {dominant_name} (faster)")
+    logging.warning(f"  Nondominant: {nondominant_name} (slower)")
+    logging.warning("=" * 60)
+
+    dominant_stream = stream(f"{dominant_name} Stream", 10)
+    nondominant_stream = stream(f"{nondominant_name} Stream", 10)
+    merge_stream = stream("Join Stream", 10)
+
+    dominant_thread = threading.Thread(name='dominant', target=dominant_func, args=(dominant_stream,))
+    nondominant_thread = threading.Thread(name='nondominant', target=nondominant_func, args=(nondominant_stream,))
+    join_thread = threading.Thread(name='join', target=bufferless_fuzzy_merge_join, args=(dominant_stream, nondominant_stream, merge_stream,))
+    sink_thread = threading.Thread(name='sink', target=sink, args=(merge_stream,))
+
+    dominant_thread.start()
+    nondominant_thread.start()
+    join_thread.start()
+    sink_thread.start()
 
 
 #import json
