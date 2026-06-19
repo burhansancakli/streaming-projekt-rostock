@@ -2,9 +2,9 @@
 
 import threading
 import time
-from datetime import datetime
 import random
 import logging
+from collections import deque
 
 from air_pollution_source import air_pollution_source
 from stream import stream
@@ -22,52 +22,79 @@ def sink(iStream):
 # weather data timestamp 1500
 # air pollution timestamp 1501
 
-def bufferless_fuzzy_merge_join(dominant_stream, recessive_stream, out_stream):
+def bufferless_fuzzy_merge_join(dominant_stream, nondominant_stream, out_stream):
 	"""
-	Bufferloser Fuzzy-Merge-Join based on increasing Timestamps.
-	The dominant Stream delivers a tuple, and the recessive Stream delivers the
-	next matching tuple with a Timestamp >= dominantTimestamp.
+	Bufferless fuzzy merge join based on increasing timestamps.
+	The dominant stream is the faster stream. The nondominant stream is the slower
+	stream. Each dominant tuple is joined with the most recent nondominant tuple
+	that has a timestamp <= dominant timestamp. If no partner exists, the dominant
+	tuple is dropped.
+
+	Each tuple may only be used once in the join.
 	"""
+	pending_nondominant = deque()
+
 	while True:
-		dominant_item = dominant_stream.get()
-		#logging.debug("join dominant tuple %s", dominant_item)
+		# Drain any available nondominant tuples into the pending buffer.
 		while True:
-			recessive_candidate = recessive_stream.inspect()
-			if recessive_candidate is None:
-				time.sleep(0.05)
-				continue
-			if recessive_candidate[0] < dominant_item[0]:
-				dropped = recessive_stream.get()
-				#logging.debug("drop stale recessive tuple %s", dropped)
-				continue
-			recessive_item = recessive_stream.get()
-			joined_item = (
-				dominant_item[0],
-				dominant_item[1],
-				recessive_item[0],
-				recessive_item[1],
-			)
-			logging.info("joined tuple: %s", joined_item)
-			out_stream.put_force(joined_item)
-			break
+			nondominant_candidate = nondominant_stream.inspect()
+			if nondominant_candidate is None:
+				break
+			pending_nondominant.append(nondominant_stream.get())
+
+		# If no dominant tuple is ready, wait until one arrives.
+		dominant_candidate = dominant_stream.inspect()
+		if dominant_candidate is None:
+			time.sleep(0.05)
+			continue
+
+		dominant_item = dominant_stream.get()
+		dominant_ts = dominant_item[0]
+
+		if len(pending_nondominant) == 0:
+			logging.info("dropped dominant tuple %s because no nondominant partner was available", dominant_item)
+			continue
+
+		# Find the most recent nondominant tuple with ts <= dominant_ts.
+		partner_index = None
+		for idx in range(len(pending_nondominant) - 1, -1, -1):
+			if pending_nondominant[idx][0] <= dominant_ts:
+				partner_index = idx
+				break
+
+		if partner_index is None:
+			logging.info("dropped dominant tuple %s because no earlier nondominant tuple exists", dominant_item)
+			continue
+
+		nondominant_item = pending_nondominant[partner_index]
+		del pending_nondominant[partner_index]
+
+		joined_item = (
+			dominant_item[0],
+			dominant_item[1],
+			nondominant_item[0],
+			nondominant_item[1],
+		)
+		logging.info("joined tuple: %s", joined_item)
+		out_stream.put_force(joined_item)
 
 
 logging.basicConfig(level=logging.DEBUG, format='[%(levelname)s] (%(threadName)-10s) %(message)s')
 
 # define two streams with different sizes
-luftverschmutzung_stream = stream("Luftverschmutzung Stream", 10)
-wetter_stream = stream("Wetter Stream", 10)
+air_pollution_stream = stream("Air Pollution Stream", 10)
+weather_stream = stream("Weather Stream", 10)
 # the output stream for the join results
 merge_stream = stream("Join Stream", 10)
 
 # create threads for three operators 2 sources and one join operator and one sink
-luftverschmutzung_thread = threading.Thread(name='luftverschmutzung', target=air_pollution_source, args=(luftverschmutzung_stream,))
-wetter_thread = threading.Thread(name='wetter', target=weather_source, args=(wetter_stream,))
-join_thread = threading.Thread(name='join', target=bufferless_fuzzy_merge_join, args=(wetter_stream, luftverschmutzung_stream, merge_stream,))
+air_pollution_thread = threading.Thread(name='air_pollution', target=air_pollution_source, args=(air_pollution_stream,))
+weather_thread = threading.Thread(name='weather', target=weather_source, args=(weather_stream,))
+join_thread = threading.Thread(name='join', target=bufferless_fuzzy_merge_join, args=(air_pollution_stream, weather_stream, merge_stream,))
 sink_thread = threading.Thread(name='sink', target=sink, args=(merge_stream,))
 
-luftverschmutzung_thread.start()
-wetter_thread.start()
+air_pollution_thread.start()
+weather_thread.start()
 join_thread.start()
 sink_thread.start()
 
