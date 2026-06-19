@@ -65,7 +65,7 @@ _prices = []   # float
 def collector(iStream: stream):
     """Drain the stream into the shared lists."""
     while True:
-        ts, val = iStream.get()
+        ts, val = iStream.get() # type: ignore
         dt = datetime.fromtimestamp(ts)
         with _lock:
             _dates.append(dt)

@@ -16,6 +16,7 @@ from air_pollution_source import air_pollution_source
 from weather_source import weather_source
 from humidity_source import humidity_source
 from sensor_energy_source import sensor_energy_source
+from nasdaq_source import nasdaq_source
 
 
 class StatsCollector:
@@ -186,6 +187,28 @@ def _landmark_window_benchmark(in_stream, collector, results_count, stop_event):
             yield result
 
 
+def _sliding_window_benchmark(in_stream, window_size, collector, results_count, stop_event):
+    """Sliding window consumer with window state tracking for benchmarking."""
+    from collections import deque
+    window = deque(maxlen=window_size)
+
+    while not stop_event.is_set():
+        ts, value = in_stream.get()
+        window.append((ts, value))
+
+        values = [v for _, v in window]
+        count = len(values)
+        avg_value = sum(values) / count
+        result = (window[0][0], window[-1][0], count, avg_value, min(values), max(values))
+
+        # Update window state — grows until window_size, then stays constant
+        collector.window_state['tuples_in_window'] = count
+        collector.window_state['window_memory_bytes'] = count * StatsCollector.TUPLE_OVERHEAD
+        collector.increment_tuples()
+        results_count['count'] += 1
+        yield result
+
+
 def benchmark_operator(operator_name, consumer_func, source_func, source_name, 
                        stream_size=20, window_size=10, duration=60):
     """
@@ -221,6 +244,9 @@ def benchmark_operator(operator_name, consumer_func, source_func, source_name,
         try:
             if operator_name == 'Tumbling Window':
                 for _ in _tumbling_window_benchmark(data_stream, window_size, collector, results_count, stop_event):
+                    pass
+            elif operator_name == 'Sliding Window':
+                for _ in _sliding_window_benchmark(data_stream, window_size, collector, results_count, stop_event):
                     pass
             else:
                 for _ in _landmark_window_benchmark(data_stream, collector, results_count, stop_event):
@@ -285,29 +311,6 @@ def plot_comparison(collectors):
         ax.plot(collector.stats['timestamps'], collector.stats['window_tuples'],
                label=collector.operator_name, color=colors.get(collector.operator_name, 'tab:gray'),
                marker='o', markersize=3, alpha=0.7)
-    # Add synthetic sliding window line: grows like tumbling, then stays at peak
-    tumbling = next((c for c in collectors if c.operator_name == 'Tumbling Window'), None)
-    if tumbling and tumbling.stats['window_tuples']:
-        peak_tw = max(tumbling.stats['window_tuples'])
-        sw_ts = tumbling.stats['timestamps']
-        sw_values = []
-        for val in tumbling.stats['window_tuples']:
-            if val >= peak_tw and not sw_values or (sw_values and sw_values[-1] >= peak_tw):
-                sw_values.append(peak_tw)
-            else:
-                sw_values.append(val)
-        # Simpler: just clamp to peak once reached
-        sw_values = []
-        reached_peak = False
-        for val in tumbling.stats['window_tuples']:
-            if reached_peak:
-                sw_values.append(peak_tw)
-            else:
-                sw_values.append(val)
-                if val >= peak_tw:
-                    reached_peak = True
-        ax.plot(sw_ts, sw_values, label='Sliding Window', color='tab:green',
-               linestyle='--', linewidth=2, alpha=0.8)
     ax.set_xlabel('Time (s)')
     ax.set_ylabel('Tuples in Window')
     ax.set_title('Window Size Over Time')
@@ -331,12 +334,6 @@ def plot_comparison(collectors):
     summaries = [c.get_summary() for c in collectors]
     operators = [s['operator'] for s in summaries]
     peak_window_mems = [s['peak_window_memory_bytes'] for s in summaries]
-    
-    # Add synthetic sliding window peak (same as tumbling peak)
-    if tumbling:
-        sw_peak = max(tumbling.stats['window_tuples']) * StatsCollector.TUPLE_OVERHEAD
-        operators.append('Sliding Window')
-        peak_window_mems.append(sw_peak)
     
     x = range(len(operators))
     bars = ax.bar(x, peak_window_mems, color=[colors.get(op, 'tab:gray') for op in operators])
@@ -394,20 +391,6 @@ def save_results_csv(collectors, filename='benchmark_results.csv'):
                 f"{summary['duration_seconds']:.2f}",
                 f"{throughput:.2f}",
             ])
-        
-        # Add synthetic sliding window row (same peak as tumbling)
-        tumbling = next((c for c in collectors if c.operator_name == 'Tumbling Window'), None)
-        if tumbling and tumbling.stats['window_tuples']:
-            sw_peak = max(tumbling.stats['window_tuples'])
-            sw_mem = sw_peak * StatsCollector.TUPLE_OVERHEAD
-            writer.writerow([
-                'Sliding Window',
-                '-', '-', '-',
-                '-', '-',
-                f"{sw_mem:.0f}",
-                f"{sw_mem:.0f}",
-                '-', '-', '-', '-', '-',
-            ])
     
     logging.info(f'Results saved to {filename}')
 
@@ -415,7 +398,7 @@ def save_results_csv(collectors, filename='benchmark_results.csv'):
 def main():
     parser = argparse.ArgumentParser(description='Benchmark window operators on same source')
     parser.add_argument('--source', type=str, default='air_pollution',
-                        choices=['air_pollution', 'weather', 'humidity', 'sensor_energy'],
+                        choices=['air_pollution', 'weather', 'humidity', 'sensor_energy', 'nasdaq'],
                         help='Data source to benchmark (default: air_pollution)')
     parser.add_argument('--window-size', type=int, default=10,
                         help='Tumbling window size in seconds (default: 10)')
@@ -433,6 +416,7 @@ def main():
         'weather': weather_source,
         'humidity': humidity_source,
         'sensor_energy': sensor_energy_source,
+        'nasdaq': nasdaq_source,
     }
     
     source_func = sources[args.source]
@@ -476,6 +460,24 @@ def main():
     elapsed_lw = time.time() - start
     logging.info(f'Landmark Window done: {count_lw} outputs in {elapsed_lw:.2f}s')
     
+    time.sleep(2)  # Cool-down period
+    
+    # Benchmark Sliding Window
+    logging.info('Running Sliding Window...')
+    start = time.time()
+    collector_sw, count_sw = benchmark_operator(
+        'Sliding Window',
+        None,
+        source_func,
+        source_name,
+        stream_size=args.stream_size,
+        window_size=args.window_size * 3,
+        duration=args.duration
+    )
+    collectors.append(collector_sw)
+    elapsed_sw = time.time() - start
+    logging.info(f'Sliding Window done: {count_sw} outputs in {elapsed_sw:.2f}s')
+    
     # Save and plot results
     save_results_csv(collectors)
     plot_comparison(collectors)
@@ -500,15 +502,6 @@ def main():
         logging.info(f"  Duration:         {summary['duration_seconds']:.2f} s")
         throughput = summary['total_tuples'] / summary['duration_seconds'] if summary['duration_seconds'] > 0 else 0
         logging.info(f"  Throughput:       {throughput:.2f} tuples/s")
-    
-    # Add sliding window synthetic summary
-    tumbling = next((c for c in collectors if c.operator_name == 'Tumbling Window'), None)
-    if tumbling and tumbling.stats['window_tuples']:
-        sw_peak = max(tumbling.stats['window_tuples'])
-        sw_mem = sw_peak * StatsCollector.TUPLE_OVERHEAD
-        logging.info(f"\nSliding Window (synthetic):")
-        logging.info(f"  Peak Window Mem:  {sw_mem:.0f} B")
-        logging.info(f"  Notes:            Grows like tumbling, stays at peak (O(window_size))")
     
     logging.info('Benchmark complete. Exiting.')
     sys.exit(0)

@@ -1,3 +1,4 @@
 Operator,Peak Memory (MB),Avg Memory (MB),Final Memory (MB),Peak Stream Mem (KB),Avg Stream Mem (KB),Peak Window Mem (B),Avg Window Mem (B),Peak Occupancy,Avg CPU (%),Total Tuples,Duration (s),Throughput (tuples/s)
-Tumbling Window,63.75,63.75,63.75,0.21,0.21,4032,1855,Air_Pollution Stream=0,0.15,4,73.21,0.05
-Landmark Window,63.83,63.81,63.83,0.21,0.21,14528,7296,Air_Pollution Stream=0,0.16,229,35.60,6.43
+Tumbling Window,64.09,64.08,64.09,0.21,0.21,4288,1892,Air_Pollution Stream=0,0.16,4,110.79,0.04
+Landmark Window,64.16,64.14,64.16,0.21,0.21,14720,7286,Air_Pollution Stream=0,0.18,233,73.26,3.18
+Sliding Window,64.20,59.34,36.02,0.21,0.21,1920,1781,Air_Pollution Stream=0,0.22,228,35.63,6.40
