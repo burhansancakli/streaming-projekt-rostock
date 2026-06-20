@@ -1,0 +1,7 @@
+Operator,Memory,Latency,Output Rate,Complexity,Best For
+FMJ,"Low (small buffer)",Low,"Every domain tuple",Medium,"Paired sensors"
+BFMJ,"Minimal (O(1))",Lowest,"Sparse (drops tuples)",Low,"IoT / edge devices"
+MDJ,"Medium (sliding window)",Medium,"Optimal pairs",High,"Correlation analysis"
+Sliding Window,"O(window size)",Low,Continuous,Low,"Trend detection"
+Tumbling Window,"O(window size)",Low,"Per window","Very Low","Interval averages"
+Landmark Window,"O(n) — unbounded",Low,"Always growing","Very Low","Cumulative statistics"
